@@ -1,0 +1,32 @@
+{
+  "name": "pi-9router-imagegen",
+  "version": "0.1.0",
+  "description": "Pi extension that generates images via 9router's Codex image_generation tool (gpt-image-2).",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "image-generation",
+    "9router",
+    "codex",
+    "gpt-image-2"
+  ],
+  "files": [
+    "imagegen.ts",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JunDev76/pi-9router-imagegen.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JunDev76/pi-9router-imagegen/issues"
+  },
+  "homepage": "https://github.com/JunDev76/pi-9router-imagegen#readme",
+  "pi": {
+    "extensions": [
+      "./imagegen.ts"
+    ]
+  }
+}
