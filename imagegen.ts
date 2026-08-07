@@ -10,7 +10,7 @@
  */
 
 import { Buffer } from "node:buffer";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, extname, join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -39,6 +39,12 @@ const TOOL_PARAMS = Type.Object({
 				"Optional exact path where the generated image should be saved. Defaults to ~/.pi/agent/generated-images/<id>.<format>.",
 		}),
 	),
+	referenceImages: Type.Optional(
+		Type.Array(Type.String(), {
+			description:
+			"Optional paths to reference images. Appended as input_image blocks so gpt-image-2 can edit/condition on them.",
+		}),
+	),
 });
 
 type ToolParams = Static<typeof TOOL_PARAMS>;
@@ -46,6 +52,14 @@ type ToolParams = Static<typeof TOOL_PARAMS>;
 function mimeFromFormat(format: string): string {
 	if (format === "jpeg") return "image/jpeg";
 	if (format === "webp") return "image/webp";
+	return "image/png";
+}
+
+function mimeFromPath(p: string): string {
+	const e = extname(p).toLowerCase();
+	if (e === ".jpg" || e === ".jpeg") return "image/jpeg";
+	if (e === ".webp") return "image/webp";
+	if (e === ".gif") return "image/gif";
 	return "image/png";
 }
 
@@ -134,15 +148,38 @@ async function generateImage(
 	const outputFormat = params.outputFormat ?? "png";
 	const sessionId = randomUUID();
 
+	// Reference images: read + base64, appended as input_image blocks so
+	// gpt-image-2 can edit/condition on them. resolvePath reuses cwd.
+	const refBlocks: Array<{ type: "input_image"; image: string; detail: "auto" }> = [];
+	if (params.referenceImages?.length) {
+		for (const refRaw of params.referenceImages) {
+			const refPath = resolvePath(refRaw.trim(), ctx.cwd);
+			const data = await readFile(refPath);
+			const b64 = Buffer.from(data).toString("base64");
+			refBlocks.push({
+				type: "input_image",
+				image: `data:${mimeFromPath(refPath)};base64,${b64}`,
+				detail: "auto",
+			});
+		}
+	}
+	const userContent: Array<{
+		type: "input_text" | "input_image";
+		text?: string;
+		image?: string;
+		detail?: "auto";
+	}> = [{ type: "input_text", text: `Generate this image: ${params.prompt}` }];
+	userContent.push(...refBlocks);
+
 	const body = {
 		model: RESPONSE_MODEL,
 		store: false,
 		instructions:
-			"You are an image generation dispatcher. Use the image_generation tool to create exactly the image requested by the user. Do not write code.",
+			"You are an image generation dispatcher. Use the image_generation tool to create exactly the image requested by the user. If reference images are provided, condition the generation on them (edit/transform/style-match as the prompt describes). Do not write code.",
 		input: [
 			{
 				role: "user",
-				content: [{ type: "input_text", text: `Generate this image: ${params.prompt}` }],
+				content: userContent,
 			},
 		],
 		text: { verbosity: "low" },
@@ -164,7 +201,7 @@ async function generateImage(
 	};
 
 	onUpdate?.({
-		content: [{ type: "text", text: `Requesting image from ${PROVIDER}/${IMAGE_MODEL}...` }],
+		content: [{ type: "text", text: `Requesting image from ${PROVIDER}/${IMAGE_MODEL}${refBlocks.length ? ` (${refBlocks.length} ref image${refBlocks.length > 1 ? "s" : ""})` : ""}...` }],
 	});
 
 	const response = await fetch(`${baseUrl}/responses`, {
@@ -219,7 +256,7 @@ export default function imagegenExtension(pi: ExtensionAPI) {
 		name: "imagegen",
 		label: "Image Gen",
 		description:
-			"Generate a raster image via 9router's Codex `image_generation` tool (gpt-image-2). Returns the saved file path and an inline image attachment.",
+			"Generate a raster image via 9router's Codex `image_generation` tool (gpt-image-2). Returns the saved file path and an inline image attachment. Pass referenceImages to condition/edit on existing images.",
 		promptSnippet: "Generate an image from a text prompt",
 		promptGuidelines: [
 			"Use imagegen when the user asks to generate, create, or draw a raster image (png/jpg/webp) from a text description.",
@@ -254,11 +291,12 @@ export default function imagegenExtension(pi: ExtensionAPI) {
 	// /img gen [--size ...] [--quality ...] [--format ...] <prompt>
 	pi.registerCommand("img", {
 		description:
-			"Generate an image: /img gen [--size auto|1024x1024|1536x1024|1024x1536] [--quality auto|low|medium|high] [--format png|webp|jpeg] [--out path] <prompt>",
+			"Generate an image: /img gen [--size auto|1024x1024|1536x1024|1024x1536] [--quality auto|low|medium|high] [--format png|webp|jpeg] [--out path] [--ref path ...] <prompt>",
 		handler: async (args, ctx) => {
 			const tokens = args.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((t) => t.replace(/^"|"$/g, "")) ?? [];
 			const options: Partial<ToolParams> = {};
 			const positional: string[] = [];
+			const refs: string[] = [];
 			for (let i = 0; i < tokens.length; i++) {
 				const t = tokens[i]!;
 				const next = tokens[i + 1];
@@ -267,8 +305,10 @@ export default function imagegenExtension(pi: ExtensionAPI) {
 				else if (t === "--background" && next) { options.background = next as ToolParams["background"]; i++; }
 				else if ((t === "--format" || t === "--output-format") && next) { options.outputFormat = next as ToolParams["outputFormat"]; i++; }
 				else if ((t === "--out" || t === "--output") && next) { options.outputPath = next; i++; }
+				else if ((t === "--ref" || t === "--reference") && next) { refs.push(...next.split(",").map((s) => s.trim()).filter(Boolean)); i++; }
 				else positional.push(t);
 			}
+			if (refs.length) options.referenceImages = refs;
 			const prompt = positional.join(" ").trim();
 			if (!prompt) {
 				ctx.ui.notify("Usage: /img gen <prompt> (optional --size/--quality/--format/--out)", "warning");
@@ -296,7 +336,8 @@ export default function imagegenExtension(pi: ExtensionAPI) {
 	});
 }
 
-// ponytail: edit mode (reference images via input_image), batches, and a
-// browser studio are skipped — add when you actually need image-to-image or
-// bulk generation. Responses API supports input_image content blocks, so the
-// upgrade path is to read referencePaths and append them to the user content.
+// ponytail: batches and a browser studio are skipped — add when you
+// actually need bulk generation. Reference-image support (input_image) is
+// implemented; edit mode uses multiple reference images or mask paths.
+// Responses API also supports a `mask` field on image_generation for
+// inpainting — add when needed.

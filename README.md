@@ -57,6 +57,8 @@ One image, now:
 /img gen a product photo of a ceramic mug on a white background
 /img gen --size 1536x1024 --quality high a cinematic expedition poster for a lava cavern
 /img gen --format webp --out ./assets/hero.png coffee shop storefront at golden hour
+/img gen --ref ./input.png make it a watercolor painting
+/img gen --ref ./sketch.png,./mood.png --size 1024x1024 render in this style
 ```
 
 | Flag | Values | Default |
@@ -66,6 +68,9 @@ One image, now:
 | `--background` | `auto` · `opaque` · `transparent` | `auto` |
 | `--format` | `png` · `webp` · `jpeg` | `png` |
 | `--out` | path | `~/.pi/agent/generated-images/<ts>-<id>.<ext>` |
+| `--ref` | path (comma-separated, repeatable) | none — text-to-image |
+
+Pass `--ref` one or more image paths to condition the generation on them (edit / transform / style-match):
 
 ## Output
 
