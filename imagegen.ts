@@ -150,7 +150,7 @@ async function generateImage(
 
 	// Reference images: read + base64, appended as input_image blocks so
 	// gpt-image-2 can edit/condition on them. resolvePath reuses cwd.
-	const refBlocks: Array<{ type: "input_image"; image: string; detail: "auto" }> = [];
+	const refBlocks: Array<{ type: "input_image"; image_url: string; detail: "auto" }> = [];
 	if (params.referenceImages?.length) {
 		for (const refRaw of params.referenceImages) {
 			const refPath = resolvePath(refRaw.trim(), ctx.cwd);
@@ -158,7 +158,7 @@ async function generateImage(
 			const b64 = Buffer.from(data).toString("base64");
 			refBlocks.push({
 				type: "input_image",
-				image: `data:${mimeFromPath(refPath)};base64,${b64}`,
+				image_url: `data:${mimeFromPath(refPath)};base64,${b64}`,
 				detail: "auto",
 			});
 		}
@@ -166,7 +166,7 @@ async function generateImage(
 	const userContent: Array<{
 		type: "input_text" | "input_image";
 		text?: string;
-		image?: string;
+		image_url?: string;
 		detail?: "auto";
 	}> = [{ type: "input_text", text: `Generate this image: ${params.prompt}` }];
 	userContent.push(...refBlocks);
