@@ -1,6 +1,6 @@
 {
   "name": "pi-9router-imagegen",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Pi extension that generates images via 9router's Codex image_generation tool (gpt-image-2).",
   "type": "module",
   "license": "MIT",
